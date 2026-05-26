@@ -10,6 +10,26 @@ A floating, always-available AI assistant for macOS — built in native SwiftUI.
 
 ---
 
+## Screenshots
+
+| Light | Dark |
+|---|---|
+| ![Anini chat — light mode](docs/screenshots/chat-light.png) | ![Anini chat — dark mode](docs/screenshots/chat-dark.png) |
+
+**Notch widget** — now playing, chat, and to-dos:
+
+![Anini notch widget](docs/screenshots/notch_widget.png)
+
+**To-do actions** — let Anini do it later, or complete it now:
+
+![Anini notch to-dos menu](docs/screenshots/notch_todos_menu.png)
+
+**Calendar demo** — Anini adding a Google Calendar event from chat:
+
+![Anini chat — calendar demo](docs/screenshots/chat-calendar-demo.png)
+
+---
+
 ## Requirements
 
 Before you build, you'll need:
@@ -82,6 +102,8 @@ Then `Cmd+Space → "Anini" → Enter` opens it anytime.
 
 Anini supports two AI backends — choose whichever you prefer (or install both and switch in Settings).
 
+![Anini settings — AI backend](docs/screenshots/settings-backend.png)
+
 ### Claude Code (recommended)
 
 ```bash
@@ -142,6 +164,8 @@ tccutil reset AppleEvents com.localapp.Anini     # Messages/Contacts/Music/etc.
 - **Appearance**: Settings → Appearance — accent color, icon emoji, background opacity.
 - **Notch widget**: Settings → Notch — pick a language to practice, toggle now-playing.
 - **Workspace**: Settings → Workspace — set the directory the AI uses as its working dir.
+
+![Anini settings — Appearance](docs/screenshots/settings-appearance.png)
 
 ---
 
