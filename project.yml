@@ -1,0 +1,51 @@
+name: Anini
+options:
+  bundleIdPrefix: com.localapp
+  deploymentTarget:
+    macOS: "26.0"
+targets:
+  Anini:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/Anini
+    info:
+      path: Sources/Anini/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Anini
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleInfoDictionaryVersion: "6.0"
+        CFBundleName: Anini
+        CFBundlePackageType: APPL
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        LSMinimumSystemVersion: "26.0"
+        LSUIElement: true
+        NSAppleEventsUsageDescription: Anini needs AppleScript access to control apps on your behalf.
+        NSAppleScriptEnabled: true
+        NSSystemAdministrationUsageDescription: Anini needs admin access to run system commands on your behalf.
+        NSCalendarsFullAccessUsageDescription: Anini needs access to your Calendar to create and read events on your behalf.
+        NSCalendarsUsageDescription: Anini needs access to your Calendar to create and read events on your behalf.
+    entitlements:
+      path: Sources/Anini/Resources/Anini.entitlements
+      properties:
+        com.apple.security.personal-information.calendars: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.localapp.Anini
+        PRODUCT_NAME: Anini
+        PRODUCT_MODULE_NAME: Anini
+        SWIFT_VERSION: "5.9"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Anini Local Signing"
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_DEBUG_DYLIB: NO
+        MACOSX_DEPLOYMENT_TARGET: "26.0"
+      configs:
+        Debug:
+          SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+          DEBUG_INFORMATION_FORMAT: dwarf
+        Release:
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
+          DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
