@@ -167,6 +167,10 @@ tccutil reset AppleEvents com.localapp.Anini     # Messages/Contacts/Music/etc.
 
 ![Anini settings — Appearance](docs/screenshots/settings-appearance.png)
 
+![Anini settings — Notch](docs/screenshots/settings-notch.png)
+
+![Anini settings — Capabilities](docs/screenshots/settings-capabilities.png)
+
 ---
 
 ## Updating
