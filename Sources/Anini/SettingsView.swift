@@ -94,7 +94,7 @@ struct SettingsView: View {
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 8)
-        .frame(width: 150, alignment: .topLeading)
+        .frame(width: 172, alignment: .topLeading)
         .background(Color.primary.opacity(0.04))
     }
 
