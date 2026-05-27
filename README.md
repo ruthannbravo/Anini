@@ -5,7 +5,7 @@ A floating, always-available AI assistant for macOS — built in native SwiftUI.
 - **⌥Space** anywhere to summon. Type a question, get an answer.
 - Lives in your menu bar as a sparkle (✦), with a notch widget for to-dos, now playing, and language practice.
 - Backed by **Claude Code** (default) or **OpenAI Codex** — pick in Settings.
-- Full Mac control: shell, AppleScript, Apple Music, iMessage, Calendar, Contacts, screenshots, and more.
+- Full Mac control: shell, AppleScript, Apple Music, iMessage, FaceTime, Calendar, Contacts, screenshots, and more.
 - API keys live in your macOS Keychain. No cloud, no relay.
 
 ---
@@ -131,7 +131,7 @@ You'll paste the key into Anini's Settings → AI Backend the first time you run
    - Picking a backend (Claude or Codex)
    - Pasting your API key
    - Setting a working directory (default: your home folder)
-   - Picking which capabilities (shell, files, web, screenshots, iMessage) to enable
+   - Picking which capabilities (shell, files, web, screenshots, iMessage, FaceTime) to enable
 3. After onboarding, press ⌥Space anytime to open the chat.
 
 ---
@@ -147,6 +147,7 @@ Click **OK** each time. These grants stick across rebuilds (thanks to the stable
 | **Automation → Messages** | First iMessage send | Sending texts via AppleScript |
 | **Automation → Contacts** | First iMessage send | Looking up phone numbers |
 | **Automation → Music** | Click "Open Apple Music" in notch | Launching Music |
+| **Automation → FaceTime** | First "end FaceTime call" request | Quitting FaceTime to hang up (placing a call needs no permission) |
 | **Calendar** | First calendar request | Reading/writing events |
 
 If a permission ever gets stuck (rare), reset it and re-trigger:

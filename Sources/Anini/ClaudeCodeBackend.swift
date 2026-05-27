@@ -87,6 +87,34 @@ class ClaudeCodeBackend: Backend {
                     "Sending iMessages is disabled. If the user asks you to send a text or iMessage, politely tell them this feature is off and they can enable it in Settings → Capabilities → Send iMessages."
                 )
             }
+            if WorkspaceConfig.shared.allowedCapabilities.contains("facetime") {
+                systemPromptAdditions.append(
+                    """
+                    When the user asks you to start, place, or make a FaceTime call to someone:
+                    1. Look up their phone number or Apple ID email via the Contacts app:
+                         osascript -e 'tell application "Contacts" to value of first phone of (first person whose name contains "NAME")'
+                       A FaceTime call can use either a phone number or an email/Apple ID.
+                    2. Start a FaceTime VIDEO call by opening the facetime: URL. This single command starts the call directly — it needs no special permission:
+                         open "facetime://+15551234567"
+                       For a FaceTime AUDIO (voice-only) call, use the facetime-audio: scheme instead:
+                         open "facetime-audio://+15551234567"
+                    3. Do NOT use System Events or UI scripting to start the call — the open command above already starts it. UI scripting from this environment is blocked and will only produce spurious "enable Accessibility" errors, so never go down that path for placing a call.
+                    4. Default to a VIDEO call unless the user explicitly asks for an audio or voice call.
+                    5. If the Contacts lookup returns nothing, ask the user for the phone number or Apple ID directly.
+
+                    When the user asks you to end, hang up, or leave the current FaceTime call:
+                    1. End the active call by quitting FaceTime (quitting drops the current call). Try the graceful quit first:
+                         osascript -e 'tell application "FaceTime" to quit'
+                    2. If that command is blocked or the call is still up after ~1 second, force-quit FaceTime, which always ends the call and needs no special permission:
+                         killall FaceTime
+                    3. Do NOT try to click FaceTime's on-screen "End" button via System Events / UI scripting — that requires Accessibility access this environment cannot use, and it is why ending calls failed before. Quitting the app is the reliable method.
+                    """
+                )
+            } else {
+                systemPromptAdditions.append(
+                    "FaceTime calling is disabled. If the user asks you to start or end a FaceTime call, politely tell them this feature is off and they can enable it in Settings → Capabilities → FaceTime calls."
+                )
+            }
             if let img = imagePath {
                 systemPromptAdditions.append(
                     "A screenshot of the user's screen was just captured and saved to \(img). Use the Read tool to read this file immediately — you CAN see the screen this way. Do not say you lack screen access."

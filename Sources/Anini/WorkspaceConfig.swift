@@ -50,6 +50,12 @@ struct Capability: Identifiable {
             detail: "Let Anini send text messages to your contacts via Messages.app",
             claudeTools: []
         ),
+        Capability(
+            id: "facetime",
+            displayName: "FaceTime calls",
+            detail: "Let Anini start FaceTime calls to your contacts and end the current call",
+            claudeTools: []
+        ),
     ]
 }
 
