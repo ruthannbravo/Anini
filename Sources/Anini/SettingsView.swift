@@ -47,25 +47,22 @@ struct SettingsView: View {
         HStack(spacing: 0) {
             sidebar
             Divider()
-            ScrollView {
-                Form {
-                    Group {
-                        switch selectedSection {
-                        case .backend:      backendSection
-                        case .workspace:    workspaceSection
-                        case .appearance:   appearanceSection
-                        case .calendar:     calendarSection
-                        case .capabilities: capabilitiesSection
-                        case .permissions:  permissionsSection
-                        case .notch:        notchSection
-                        case .advanced:     advancedSection
-                        case .usage:        usageSection
-                        }
+            Form {
+                Group {
+                    switch selectedSection {
+                    case .backend:      backendSection
+                    case .workspace:    workspaceSection
+                    case .appearance:   appearanceSection
+                    case .calendar:     calendarSection
+                    case .capabilities: capabilitiesSection
+                    case .permissions:  permissionsSection
+                    case .notch:        notchSection
+                    case .advanced:     advancedSection
+                    case .usage:        usageSection
                     }
                 }
-                .formStyle(.grouped)
-                .scrollDisabled(true)
             }
+            .formStyle(.grouped)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
