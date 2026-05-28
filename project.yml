@@ -65,6 +65,37 @@ targets:
         Debug:
           SWIFT_OPTIMIZATION_LEVEL: "-Onone"
           DEBUG_INFORMATION_FORMAT: dwarf
+          ENABLE_TESTABILITY: YES
+          ENABLE_HARDENED_RUNTIME: NO
         Release:
           SWIFT_OPTIMIZATION_LEVEL: "-O"
           DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
+  AniniTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/AniniTests
+    dependencies:
+      - target: Anini
+    settings:
+      base:
+        PRODUCT_NAME: AniniTests
+        PRODUCT_MODULE_NAME: AniniTests
+        PRODUCT_BUNDLE_IDENTIFIER: com.localapp.AniniTests
+        SWIFT_VERSION: "5.9"
+        MACOSX_DEPLOYMENT_TARGET: "26.0"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Anini Local Signing"
+        ENABLE_HARDENED_RUNTIME: NO
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Anini.app/Contents/MacOS/Anini"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+schemes:
+  Anini:
+    build:
+      targets:
+        Anini: all
+        AniniTests: [test]
+    test:
+      targets:
+        - AniniTests

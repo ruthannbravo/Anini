@@ -42,7 +42,7 @@ Before you build, you'll need:
 | Homebrew | Install xcodegen | [brew.sh](https://brew.sh) |
 | xcodegen | Generates `Anini.xcodeproj` from `project.yml` | `brew install xcodegen` |
 | Claude Code CLI *or* Codex CLI | The AI brain Anini talks to | See [Pick a backend](#pick-a-backend) below |
-| An API key | For whichever backend you pick | [console.anthropic.com](https://console.anthropic.com) (Claude) or [platform.openai.com](https://platform.openai.com) (Codex) |
+| A way to sign in to that CLI | Either a subscription or an API key | See [Pick a backend](#pick-a-backend) below — both options work |
 
 ---
 
@@ -110,7 +110,14 @@ Anini supports two AI backends — choose whichever you prefer (or install both 
 npm install -g @anthropic-ai/claude-code
 ```
 
-Get an API key at [console.anthropic.com](https://console.anthropic.com) → API Keys.
+Then sign the CLI in with **either** of:
+
+- **Your Claude subscription** (Pro / Max / Team) — run `claude` once in any
+  terminal and follow the in-terminal login prompt. Free if you already pay
+  for Claude. ✨
+- **An Anthropic API key** (pay-per-use) — get one at
+  [console.anthropic.com](https://console.anthropic.com) → API Keys, then paste
+  it into Anini's Settings → AI Backend.
 
 ### OpenAI Codex
 
@@ -118,21 +125,30 @@ Get an API key at [console.anthropic.com](https://console.anthropic.com) → API
 npm install -g @openai/codex
 ```
 
-Get an API key at [platform.openai.com](https://platform.openai.com) → API Keys.
+Then sign the CLI in with **either** of:
 
-You'll paste the key into Anini's Settings → AI Backend the first time you run it.
+- **Your ChatGPT subscription** (Plus / Pro / Team) — run `codex login` and
+  sign in with your ChatGPT account. ✨
+- **An OpenAI API key** (pay-per-use) — get one at
+  [platform.openai.com](https://platform.openai.com) → API Keys, then paste it
+  into Anini's Settings → AI Backend.
+
+> **You only need to paste an API key into Anini if you're going the pay-per-use route.**
+> If you signed in with your subscription, the CLI already has its credentials
+> and Anini will use them automatically.
 
 ---
 
 ## First run
 
 1. Press **⌥Space** (Option+Space) — Anini's floating window appears.
-2. The onboarding wizard will walk you through:
-   - Picking a backend (Claude or Codex)
-   - Pasting your API key
-   - Setting a working directory (default: your home folder)
-   - Picking which capabilities (shell, files, web, screenshots, iMessage, FaceTime) to enable
-3. After onboarding, press ⌥Space anytime to open the chat.
+2. The onboarding wizard walks you through 4 steps:
+   - **Choose a backend** — Claude Code or Codex (only the ones you installed will be selectable)
+   - **Workspace** — pick the working directory the AI uses (default: your home folder)
+   - **Sensitive paths** — toggle which folders the AI should never touch (`~/.ssh`, `~/.aws`, browser passwords, etc.)
+   - **Permission mode** — "Safe" (the AI asks before risky actions) or full-auto
+3. **Only if you're using the pay-per-use API key route**, paste your key into Settings → AI Backend afterward. Subscription users can skip this — the CLI already has its credentials.
+4. Press ⌥Space anytime to open the chat.
 
 ---
 

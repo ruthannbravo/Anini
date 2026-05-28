@@ -106,7 +106,7 @@ class CodexBackend: Backend {
             }
 
             var env = ProcessInfo.processInfo.environment
-            env["PATH"] = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/Library/Frameworks/Python.framework/Versions/3.14/bin:\(NSHomeDirectory())/.npm-global/bin:" + (env["PATH"] ?? "")
+            env["PATH"] = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:\(NSHomeDirectory())/.npm-global/bin:" + (env["PATH"] ?? "")
             if let key = Keychain.load(for: "openai_api_key"), !key.isEmpty {
                 env["OPENAI_API_KEY"] = key
             }

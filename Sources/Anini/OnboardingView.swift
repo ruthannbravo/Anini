@@ -222,7 +222,7 @@ struct OnboardingView: View {
                 .foregroundStyle(.orange)
             }
 
-            Text("All commands are logged to ~/.anini/audit.log.")
+            Text("Backend lifecycle events (sandbox profile, session ID, exit code) are logged to ~/.anini/audit.log. Command bodies are not recorded.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
 

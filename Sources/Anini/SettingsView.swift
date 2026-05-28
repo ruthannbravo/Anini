@@ -162,6 +162,9 @@ struct SettingsView: View {
                     show: $showAnthropicKey,
                     keychainKey: "anthropic_api_key"
                 )
+                Text("Optional — leave blank if you signed in to `claude` with your Claude subscription.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             } else {
                 modelPicker(
                     label: "Model",
@@ -175,6 +178,9 @@ struct SettingsView: View {
                     show: $showOpenaiKey,
                     keychainKey: "openai_api_key"
                 )
+                Text("Optional — leave blank if you ran `codex login` with your ChatGPT subscription.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
         } header: {
             Text("AI Backend")
@@ -663,9 +669,9 @@ struct SettingsView: View {
             Group {
                 switch kind {
                 case .claudeCode:
-                    Text("3. Get your API key at console.anthropic.com → API Keys — paste it in the field above")
+                    Text("3. Sign in — either run `claude` in Terminal and use your Claude subscription, **or** paste an API key from console.anthropic.com into the field above.")
                 case .codex:
-                    Text("3. Get your API key at platform.openai.com → API Keys — paste it in the field above")
+                    Text("3. Sign in — either run `codex login` and use your ChatGPT subscription, **or** paste an API key from platform.openai.com into the field above.")
                 }
             }
             .font(.system(size: 11))

@@ -77,6 +77,16 @@ class WorkspaceConfig: ObservableObject {
             UserDefaults.standard.set(expanded, forKey: "workspace_path")
         }
     }
+
+    /// Test-friendly variant of the workspacePath setter: expands and persists
+    /// to an arbitrary UserDefaults suite. Exposed so tests don't pollute the
+    /// real defaults database.
+    static let workspacePathDefaultsKey = "workspace_path"
+    static func writeWorkspacePath(_ raw: String, to defaults: UserDefaults) -> String {
+        let expanded = Path.expand(raw)
+        defaults.set(expanded, forKey: workspacePathDefaultsKey)
+        return expanded
+    }
     @Published var activeBackend: BackendKind {
         didSet { UserDefaults.standard.set(activeBackend.rawValue, forKey: "active_backend") }
     }

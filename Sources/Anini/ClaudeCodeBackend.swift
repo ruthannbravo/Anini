@@ -186,7 +186,7 @@ class ClaudeCodeBackend: Backend {
 
             // Augment PATH so node-installed MCP servers resolve
             var env = ProcessInfo.processInfo.environment
-            let extraPaths = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/Library/Frameworks/Python.framework/Versions/3.14/bin"
+            let extraPaths = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
             env["PATH"] = extraPaths + ":" + (env["PATH"] ?? "")
             if let key = Keychain.load(for: "anthropic_api_key"), !key.isEmpty {
                 env["ANTHROPIC_API_KEY"] = key

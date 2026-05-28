@@ -10,6 +10,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let nowPlayingService = NowPlayingService()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Skip the single-instance guard when xctest has injected the test bundle.
+        let underTest = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        if !underTest {
+            // If another Anini is already running, hand off and quit. Carbon hotkeys
+            // and the menu-bar item don't tolerate duplicate owners.
+            let others = NSRunningApplication.runningApplications(withBundleIdentifier: "com.localapp.Anini")
+                .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+            if let existing = others.first {
+                NSLog("Anini: another instance (pid \(existing.processIdentifier)) is already running — activating it and exiting.")
+                existing.activate(options: [.activateAllWindows])
+                NSApp.terminate(nil)
+                return
+            }
+        }
         // Sweep stale sandbox-profile / settings files from prior runs that
         // were killed before their backend's terminationHandler could fire
         // (SIGKILL, panic, reboot). Files newer than 1h are left alone in
@@ -19,13 +33,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupPanel()
         setupNotch()
         hotkeyManager.onToggle = { [weak self] in self?.togglePanel() }
-        hotkeyManager.register()
+        if let err = hotkeyManager.register() {
+            presentHotkeyRegistrationFailure(status: err)
+        }
+    }
+
+    private func presentHotkeyRegistrationFailure(status: OSStatus) {
+        let alert = NSAlert()
+        alert.messageText = "Anini couldn't register ⌥Space"
+        let hint = status == -9878
+            ? "Another app already owns this shortcut. Quit the conflicting app or change its hotkey, then relaunch Anini."
+            : "Check System Settings ▸ Keyboard ▸ Shortcuts for a conflict, then relaunch Anini."
+        alert.informativeText = "RegisterEventHotKey returned OSStatus \(status). \(hint)"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     func setupMenuBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Claude")
+            button.image = NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Anini")
             button.action = #selector(togglePanel)
             button.target = self
         }

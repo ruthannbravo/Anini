@@ -56,7 +56,6 @@ class NotchWidget: NSPanel {
     private let expandedHChat: CGFloat = 120
     private let expandedHTodo: CGFloat = 260
     private var isAnimating = false
-    private var enforceTimer: Timer?
 
     init(nowPlaying: NowPlayingService, onOpenChat: @escaping (String, TodoTask?) -> Void, onOpenSettings: @escaping () -> Void) {
         super.init(
@@ -144,18 +143,20 @@ class NotchWidget: NSPanel {
             }
             .store(in: &cancellables)
 
-        // Enforce center position periodically. enforceCurrentPosition() is
-        // a no-op when the frame is already correct, so CPU cost is minimal.
-        let t = Timer.scheduledTimer(withTimeInterval: 1.0 / 15.0, repeats: true) { [weak self] _ in
-            guard let self, !self.isAnimating else { return }
-            self.enforceCurrentPosition()
-        }
-        RunLoop.main.add(t, forMode: .default)
-        enforceTimer = t
+        // Event-driven repositioning: didMoveNotification handles drag/programmatic
+        // moves; screen-parameter + app-activation hooks in AppDelegate cover
+        // display changes and Spaces. No polling timer — lets App Nap engage.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(screenParamsChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
     }
 
-    deinit {
-        enforceTimer?.invalidate()
+    @objc private func screenParamsChanged() {
+        guard !isAnimating else { return }
+        enforceCurrentPosition()
     }
 
     private var expandedWidth: CGFloat {
