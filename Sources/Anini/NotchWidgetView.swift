@@ -323,6 +323,8 @@ struct NotchWidgetView: View {
             Text(label)
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(notchState.activeTab == tab ? .white : Color.secondary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
                 .background(notchState.activeTab == tab

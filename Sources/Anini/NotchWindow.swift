@@ -144,9 +144,9 @@ class NotchWidget: NSPanel {
             }
             .store(in: &cancellables)
 
-        // Enforce center position every frame. enforceCurrentPosition() is
+        // Enforce center position periodically. enforceCurrentPosition() is
         // a no-op when the frame is already correct, so CPU cost is minimal.
-        let t = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+        let t = Timer.scheduledTimer(withTimeInterval: 1.0 / 15.0, repeats: true) { [weak self] _ in
             guard let self, !self.isAnimating else { return }
             self.enforceCurrentPosition()
         }

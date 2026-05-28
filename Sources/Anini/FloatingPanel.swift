@@ -90,6 +90,23 @@ private class RoundedVisualEffectView: NSVisualEffectView {
     }
 }
 
+/// Hosting view that accepts the first mouse click even when its window isn't
+/// key. The panel is a non-activating floating panel, so without this the first
+/// click on a control (nav button, API-key text field, etc.) is consumed just
+/// to bring the window forward — making controls feel unclickable until a
+/// second click. Returning true here delivers that first click to the control.
+private final class FirstMouseHostingView: NSHostingView<AnyView> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    required init(rootView: AnyView) {
+        super.init(rootView: rootView)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
 class FloatingPanel: NSPanel {
     private var cancellables = Set<AnyCancellable>()
     private var savedFrame: NSRect?
@@ -119,7 +136,7 @@ class FloatingPanel: NSPanel {
         visualEffect.autoresizingMask = [.width, .height]
         self.visualEffectView = visualEffect
 
-        let hosting = NSHostingView(rootView: contentView)
+        let hosting = FirstMouseHostingView(rootView: contentView)
         hosting.translatesAutoresizingMaskIntoConstraints = false
         hosting.sizingOptions = []
         hosting.wantsLayer = true
