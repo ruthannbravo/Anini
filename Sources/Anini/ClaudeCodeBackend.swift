@@ -3,7 +3,28 @@ import Foundation
 class ClaudeCodeBackend: Backend {
     let displayName = "Claude Code"
     private(set) var sessionId: String?
+    private let processLock = NSLock()
     private var currentProcess: Process?
+
+    private func swapCurrent(_ next: Process?) -> Process? {
+        processLock.lock()
+        defer { processLock.unlock() }
+        let prior = currentProcess
+        currentProcess = next
+        return prior
+    }
+
+    private func clearCurrent(if proc: Process) {
+        processLock.lock()
+        defer { processLock.unlock() }
+        if currentProcess === proc { currentProcess = nil }
+    }
+
+    private func snapshotCurrent() -> Process? {
+        processLock.lock()
+        defer { processLock.unlock() }
+        return currentProcess
+    }
 
     var isAvailable: Bool { ClaudeCodeBackend.checkAvailable() }
 
@@ -45,7 +66,7 @@ class ClaudeCodeBackend: Backend {
     }
 
     func interrupt() {
-        currentProcess?.interrupt()
+        snapshotCurrent()?.interrupt()
     }
 
     func clearSession() {
@@ -194,6 +215,7 @@ class ClaudeCodeBackend: Backend {
                 if let url = settingsURLForCleanup {
                     try? FileManager.default.removeItem(at: url)
                 }
+                self?.clearCurrent(if: proc)
                 let result = streamState.result
                 if let sid = result.sessionId {
                     DispatchQueue.main.async { self?.sessionId = sid }
@@ -210,10 +232,15 @@ class ClaudeCodeBackend: Backend {
                 }
             }
 
+            // Publish ownership before launching so interrupt() can never race
+            // a partial assignment, and so any prior in-flight process gets
+            // stopped instead of orphaned.
+            let prior = swapCurrent(process)
+            prior?.interrupt()
             do {
                 try process.run()
-                currentProcess = process
             } catch {
+                clearCurrent(if: process)
                 continuation.resume(throwing: error)
             }
         }

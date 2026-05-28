@@ -62,17 +62,19 @@ struct Capability: Identifiable {
 class WorkspaceConfig: ObservableObject {
     static let shared = WorkspaceConfig()
 
-    @Published var workspacePath: String {
-        didSet {
-            // Expand tildes as soon as a value lands so downstream consumers
-            // (which pass the string into URL(fileURLWithPath:)) don't get a
-            // literal "~/..." that fileURLWithPath does not expand.
-            let expanded = Path.expand(workspacePath)
-            if expanded != workspacePath {
-                workspacePath = expanded
-                return
-            }
-            UserDefaults.standard.set(workspacePath, forKey: "workspace_path")
+    // Backing storage so the setter can normalize before the @Published
+    // value (and willSet/objectWillChange) ever sees a literal "~/...".
+    // Without this, observers briefly see the unexpanded value and pass it
+    // to URL(fileURLWithPath:), which does not expand tildes.
+    private var _workspacePath: String = ""
+    var workspacePath: String {
+        get { _workspacePath }
+        set {
+            let expanded = Path.expand(newValue)
+            guard expanded != _workspacePath else { return }
+            objectWillChange.send()
+            _workspacePath = expanded
+            UserDefaults.standard.set(expanded, forKey: "workspace_path")
         }
     }
     @Published var activeBackend: BackendKind {
@@ -228,7 +230,7 @@ class WorkspaceConfig: ObservableObject {
     }
 
     private init() {
-        workspacePath = Path.expand(UserDefaults.standard.string(forKey: "workspace_path")
+        _workspacePath = Path.expand(UserDefaults.standard.string(forKey: "workspace_path")
             ?? FileManager.default.homeDirectoryForCurrentUser.path)
         activeBackend = BackendKind(rawValue: UserDefaults.standard.string(forKey: "active_backend") ?? "")
             ?? .claudeCode

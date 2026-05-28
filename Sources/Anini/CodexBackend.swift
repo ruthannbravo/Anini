@@ -3,7 +3,28 @@ import Foundation
 class CodexBackend: Backend {
     let displayName = "Codex"
     private(set) var sessionId: String? = nil
+    private let processLock = NSLock()
     private var currentProcess: Process?
+
+    private func swapCurrent(_ next: Process?) -> Process? {
+        processLock.lock()
+        defer { processLock.unlock() }
+        let prior = currentProcess
+        currentProcess = next
+        return prior
+    }
+
+    private func clearCurrent(if proc: Process) {
+        processLock.lock()
+        defer { processLock.unlock() }
+        if currentProcess === proc { currentProcess = nil }
+    }
+
+    private func snapshotCurrent() -> Process? {
+        processLock.lock()
+        defer { processLock.unlock() }
+        return currentProcess
+    }
 
     var isAvailable: Bool { CodexBackend.checkAvailable() }
 
@@ -103,11 +124,12 @@ class CodexBackend: Backend {
             }
 
             let profileURLForCleanup = sandboxProfileURL
-            process.terminationHandler = { proc in
+            process.terminationHandler = { [weak self] proc in
                 stdoutPipe.fileHandleForReading.readabilityHandler = nil
                 if let url = profileURLForCleanup {
                     try? FileManager.default.removeItem(at: url)
                 }
+                self?.clearCurrent(if: proc)
                 SecurityLayer.shared.log("Codex exit=\(proc.terminationStatus)")
                 let text = output.snapshot().trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -121,10 +143,15 @@ class CodexBackend: Backend {
                 }
             }
 
+            // Publish ownership before launching so interrupt() can never race
+            // a partial assignment, and so any prior in-flight process gets
+            // stopped instead of orphaned.
+            let prior = swapCurrent(process)
+            prior?.interrupt()
             do {
                 try process.run()
-                currentProcess = process
             } catch {
+                clearCurrent(if: process)
                 continuation.resume(throwing: error)
             }
         }
@@ -134,7 +161,7 @@ class CodexBackend: Backend {
         "Codex doesn't support /compact. Clear the session to start fresh."
     }
 
-    func interrupt() { currentProcess?.interrupt() }
+    func interrupt() { snapshotCurrent()?.interrupt() }
     func clearSession() {}
 }
 

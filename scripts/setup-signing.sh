@@ -76,7 +76,11 @@ echo ""
 echo "  → Now trusting the cert for code signing."
 echo "    macOS will ask for your Mac login password — type it when prompted."
 echo ""
-security add-trusted-cert -r trustRoot -p codeSign \
+# Use trustAsRoot (not trustRoot) so the trust setting is narrowly scoped:
+# trustAsRoot lets codesign accept this self-signed leaf for the codeSign
+# policy only, without elevating it to a fully-trusted root CA for anything
+# else macOS might consult the user trust store for.
+security add-trusted-cert -r trustAsRoot -p codeSign \
     -k "$KEYCHAIN" cert.pem
 
 # 5. Verify

@@ -194,11 +194,17 @@ struct SettingsView: View {
                     if panel.runModal() == .OK {
                         workspaceInput = panel.url?.path ?? workspaceInput
                         config.workspacePath = workspaceInput
+                        workspaceInput = config.workspacePath
                     }
                 }
             }
             if workspaceInput != config.workspacePath {
-                Button("Apply") { config.workspacePath = workspaceInput }
+                Button("Apply") {
+                    config.workspacePath = workspaceInput
+                    // Reflect the expanded value back to the field so the user
+                    // sees the absolute path that was actually persisted.
+                    workspaceInput = config.workspacePath
+                }
             }
         } header: {
             Text("Workspace Directory")

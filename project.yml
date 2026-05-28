@@ -31,6 +31,25 @@ targets:
       path: Sources/Anini/Resources/Anini.entitlements
       properties:
         com.apple.security.personal-information.calendars: true
+    preBuildScripts:
+      - name: Verify code-signing identity
+        # Without this check, a missing "Anini Local Signing" cert surfaces
+        # as a cryptic codesign failure deep in the build log. We catch it
+        # up front and point at scripts/setup-signing.sh.
+        basedOnDependencyAnalysis: false
+        script: |
+          IDENTITY="${CODE_SIGN_IDENTITY:-Anini Local Signing}"
+          # Ad-hoc signing is always available; nothing to verify.
+          if [ "$IDENTITY" = "-" ] || [ "$IDENTITY" = "Sign to Run Locally" ]; then
+              exit 0
+          fi
+          if ! /usr/bin/security find-identity -v -p codesigning | grep -q "$IDENTITY"; then
+              echo "error: Code-signing identity \"$IDENTITY\" not found in your login keychain."
+              echo "error: Run scripts/setup-signing.sh once to create the local Anini signing cert, then rebuild."
+              echo "error: To use a different identity instead, override it: xcodebuild ... CODE_SIGN_IDENTITY=\"<your identity>\"."
+              echo "error: To build unsigned for a quick test: xcodebuild ... CODE_SIGN_IDENTITY=\"-\" CODE_SIGN_STYLE=Automatic."
+              exit 1
+          fi
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.localapp.Anini
