@@ -163,7 +163,7 @@ struct OnboardingView: View {
                     panel.canChooseFiles = false
                     panel.canChooseDirectories = true
                     panel.allowsMultipleSelection = false
-                    panel.directoryURL = URL(fileURLWithPath: workspaceInput)
+                    panel.directoryURL = URL(fileURLWithPath: Path.expand(workspaceInput))
                     if panel.runModal() == .OK {
                         workspaceInput = panel.url?.path ?? workspaceInput
                     }
@@ -345,7 +345,7 @@ struct OnboardingView: View {
     }
 
     private func finishOnboarding() {
-        config.workspacePath = workspaceInput
+        config.workspacePath = Path.expand(workspaceInput)
         config.activeBackend = selectedBackend
         BackendManager.shared.switchBackend(to: selectedBackend)
         panelState.showingSettings = false

@@ -11,39 +11,6 @@ class CodexBackend: Backend {
         resolveExecutable() != nil
     }
 
-    // Builds a macOS Seatbelt profile that denies reads & writes on every
-    // sensitive path the user still has protected. Returns nil if nothing
-    // is protected (so we don't pay for sandbox-exec when not needed).
-    private static func sandboxProfile() -> String? {
-        let unprotected = WorkspaceConfig.shared.unprotectedPaths
-        let protected = SecurityLayer.shared.sensitivePaths
-            .filter { !unprotected.contains($0.id) }
-        guard !protected.isEmpty else { return nil }
-
-        let home = NSHomeDirectory()
-        var lines = ["(version 1)", "(allow default)"]
-        for entry in protected {
-            let expanded = entry.path.hasPrefix("~/")
-                ? home + entry.path.dropFirst(1)
-                : entry.path
-            // Escape any embedded quotes/backslashes to keep the SBPL string valid.
-            let escaped = expanded
-                .replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "\"", with: "\\\"")
-            lines.append("(deny file-read* file-write* (subpath \"\(escaped)\"))")
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    private static func writeSandboxProfile(_ contents: String) -> URL? {
-        let url = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("anini-codex-\(UUID().uuidString).sb")
-        guard let data = contents.data(using: .utf8),
-              (try? data.write(to: url, options: .atomic)) != nil
-        else { return nil }
-        return url
-    }
-
     private static func resolveExecutable() -> String? {
         let home = NSHomeDirectory()
         let candidates = [
@@ -73,18 +40,31 @@ class CodexBackend: Backend {
             throw BackendError.notFound("codex")
         }
 
+        let policy = PermissionPolicy.current()
+
         return try await withCheckedThrowingContinuation { continuation in
             let process = Process()
             let stdoutPipe = Pipe()
             let stderrPipe = Pipe()
 
-            process.currentDirectoryURL = URL(fileURLWithPath: WorkspaceConfig.shared.workspacePath)
+            process.currentDirectoryURL = URL(fileURLWithPath: Path.expand(WorkspaceConfig.shared.workspacePath))
             var codexArgs = [
                 "exec",
-                "--dangerously-bypass-approvals-and-sandbox",
                 "--skip-git-repo-check",
                 "--color", "never",
             ]
+            // Bug 1: previously this flag was hardcoded, so Safe-mode users got
+            // full-auto anyway. Now honor the policy: bypass only when the user
+            // explicitly opted into full-auto. In Safe mode use codex's
+            // `workspace-write` sandbox, which allows reads everywhere but
+            // restricts writes (and arbitrary shell side effects) to the cwd.
+            // codex exec is non-interactive, so we can't fall back to live
+            // approvals — workspace-write is the safest non-bypass option.
+            if policy.allowFullAuto {
+                codexArgs.append("--dangerously-bypass-approvals-and-sandbox")
+            } else {
+                codexArgs += ["--sandbox", "workspace-write"]
+            }
             let model = WorkspaceConfig.shared.codexModel
             if model != "default" { codexArgs += ["-m", model] }
             if let img = imagePath { codexArgs += ["-i", img] }
@@ -94,8 +74,7 @@ class CodexBackend: Backend {
             // wrap codex in sandbox-exec so the kernel itself blocks reads/writes
             // to those paths — even when Codex shells out via Bash.
             var sandboxProfileURL: URL? = nil
-            if let profile = CodexBackend.sandboxProfile(),
-               let url = CodexBackend.writeSandboxProfile(profile) {
+            if let url = policy.writeSandboxProfile(prefix: "codex") {
                 sandboxProfileURL = url
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/sandbox-exec")
                 process.arguments = ["-f", url.path, execPath] + codexArgs

@@ -10,6 +10,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let nowPlayingService = NowPlayingService()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Sweep stale sandbox-profile / settings files from prior runs that
+        // were killed before their backend's terminationHandler could fire
+        // (SIGKILL, panic, reboot). Files newer than 1h are left alone in
+        // case a sibling Anini process is mid-subprocess.
+        PermissionPolicy.cleanupOrphans()
         setupMenuBar()
         setupPanel()
         setupNotch()

@@ -11,27 +11,6 @@ class ClaudeCodeBackend: Backend {
         resolveExecutable() != nil
     }
 
-    private static func denyRulesForProtectedPaths() -> [String] {
-        let unprotected = WorkspaceConfig.shared.unprotectedPaths
-        let protected = SecurityLayer.shared.sensitivePaths
-            .filter { !unprotected.contains($0.id) }
-        guard !protected.isEmpty else { return [] }
-
-        let home = NSHomeDirectory()
-        let tools = ["Read", "Edit", "Write", "MultiEdit", "NotebookEdit"]
-        var rules: [String] = []
-        for entry in protected {
-            let expanded = entry.path.hasPrefix("~/")
-                ? home + entry.path.dropFirst(1)
-                : entry.path
-            for tool in tools {
-                rules.append("\(tool)(\(expanded))")
-                rules.append("\(tool)(\(expanded)/**)")
-            }
-        }
-        return rules
-    }
-
     private static func resolveExecutable() -> String? {
         let home = NSHomeDirectory()
         let candidates = [
@@ -78,13 +57,14 @@ class ClaudeCodeBackend: Backend {
             throw BackendError.notFound("claude")
         }
 
+        let policy = PermissionPolicy.current()
+
         return try await withCheckedThrowingContinuation { continuation in
             let process = Process()
             let stdoutPipe = Pipe()
             let stderrPipe = Pipe()
 
-            process.executableURL = URL(fileURLWithPath: execPath)
-            process.currentDirectoryURL = URL(fileURLWithPath: WorkspaceConfig.shared.workspacePath)
+            process.currentDirectoryURL = URL(fileURLWithPath: Path.expand(WorkspaceConfig.shared.workspacePath))
 
             var args = ["-p", input, "--output-format", "stream-json", "--verbose",
                         "--model", WorkspaceConfig.shared.claudeModel]
@@ -158,11 +138,30 @@ class ClaudeCodeBackend: Backend {
                     args += ["--allowedTools", enabledTools.joined(separator: ",")]
                 }
             }
-            // Honor the user's sensitive-path toggles from onboarding — applies in every permission mode.
-            for rule in ClaudeCodeBackend.denyRulesForProtectedPaths() {
-                args += ["--disallowedTools", rule]
+            // Honor sensitive-path toggles from onboarding. Deny rules live in a
+            // temp settings JSON (passed via --settings) rather than --disallowedTools
+            // argv flags, so the protected paths never appear in `ps` output.
+            var settingsURL: URL? = nil
+            if let url = policy.writeClaudeSettings(prefix: "claude") {
+                settingsURL = url
+                args += ["--settings", url.path]
             }
-            process.arguments = args
+
+            // OS-level path protection: if any sensitive paths are still protected,
+            // wrap claude in sandbox-exec so the kernel itself blocks reads/writes
+            // to those paths — even when Claude Code shells out via Bash. CLI deny
+            // rules are best-effort (a model can rename/symlink/encode paths to
+            // dodge string matching); the kernel sandbox is the actual guarantee.
+            var sandboxProfileURL: URL? = nil
+            if let url = policy.writeSandboxProfile(prefix: "claude") {
+                sandboxProfileURL = url
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/sandbox-exec")
+                process.arguments = ["-f", url.path, execPath] + args
+                SecurityLayer.shared.log("ClaudeCode sandboxed via \(url.lastPathComponent)")
+            } else {
+                process.executableURL = URL(fileURLWithPath: execPath)
+                process.arguments = args
+            }
 
             // Augment PATH so node-installed MCP servers resolve
             var env = ProcessInfo.processInfo.environment
@@ -185,8 +184,16 @@ class ClaudeCodeBackend: Backend {
                 }
             }
 
+            let profileURLForCleanup = sandboxProfileURL
+            let settingsURLForCleanup = settingsURL
             process.terminationHandler = { [weak self] proc in
                 stdoutPipe.fileHandleForReading.readabilityHandler = nil
+                if let url = profileURLForCleanup {
+                    try? FileManager.default.removeItem(at: url)
+                }
+                if let url = settingsURLForCleanup {
+                    try? FileManager.default.removeItem(at: url)
+                }
                 let result = streamState.result
                 if let sid = result.sessionId {
                     DispatchQueue.main.async { self?.sessionId = sid }

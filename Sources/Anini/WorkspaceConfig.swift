@@ -63,7 +63,17 @@ class WorkspaceConfig: ObservableObject {
     static let shared = WorkspaceConfig()
 
     @Published var workspacePath: String {
-        didSet { UserDefaults.standard.set(workspacePath, forKey: "workspace_path") }
+        didSet {
+            // Expand tildes as soon as a value lands so downstream consumers
+            // (which pass the string into URL(fileURLWithPath:)) don't get a
+            // literal "~/..." that fileURLWithPath does not expand.
+            let expanded = Path.expand(workspacePath)
+            if expanded != workspacePath {
+                workspacePath = expanded
+                return
+            }
+            UserDefaults.standard.set(workspacePath, forKey: "workspace_path")
+        }
     }
     @Published var activeBackend: BackendKind {
         didSet { UserDefaults.standard.set(activeBackend.rawValue, forKey: "active_backend") }
@@ -218,8 +228,8 @@ class WorkspaceConfig: ObservableObject {
     }
 
     private init() {
-        workspacePath = UserDefaults.standard.string(forKey: "workspace_path")
-            ?? FileManager.default.homeDirectoryForCurrentUser.path
+        workspacePath = Path.expand(UserDefaults.standard.string(forKey: "workspace_path")
+            ?? FileManager.default.homeDirectoryForCurrentUser.path)
         activeBackend = BackendKind(rawValue: UserDefaults.standard.string(forKey: "active_backend") ?? "")
             ?? .claudeCode
         dangerouslySkipPermissions = UserDefaults.standard.bool(forKey: "dangerous_skip_permissions")
