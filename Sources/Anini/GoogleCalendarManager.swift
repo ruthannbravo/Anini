@@ -52,7 +52,10 @@ class GoogleCalendarManager: NSObject, ObservableObject {
         let scheme      = reverseScheme(for: clientID)
         let redirectURI = self.redirectURI(for: clientID)
 
-        var components = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
+        guard var components = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth") else {
+            errorMessage = "Failed to build authorization URL."
+            return
+        }
         components.queryItems = [
             URLQueryItem(name: "client_id",             value: clientID),
             URLQueryItem(name: "redirect_uri",          value: redirectURI),
@@ -133,7 +136,11 @@ class GoogleCalendarManager: NSObject, ObservableObject {
     // MARK: - Private
 
     private func exchangeCode(_ code: String, clientID: String, codeVerifier: String, redirectURI: String) async {
-        var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
+        guard let tokenURL = URL(string: "https://oauth2.googleapis.com/token") else {
+            errorMessage = "Token exchange failed."
+            return
+        }
+        var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         let params: [String: String] = [
@@ -177,7 +184,8 @@ class GoogleCalendarManager: NSObject, ObservableObject {
     }
 
     private func fetchUserEmail(accessToken: String) async {
-        var request = URLRequest(url: URL(string: "https://www.googleapis.com/oauth2/v2/userinfo")!)
+        guard let userinfoURL = URL(string: "https://www.googleapis.com/oauth2/v2/userinfo") else { return }
+        var request = URLRequest(url: userinfoURL)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         guard let (data, _) = try? await URLSession.shared.data(for: request),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

@@ -11,6 +11,27 @@ class ClaudeCodeBackend: Backend {
         resolveExecutable() != nil
     }
 
+    private static func denyRulesForProtectedPaths() -> [String] {
+        let unprotected = WorkspaceConfig.shared.unprotectedPaths
+        let protected = SecurityLayer.shared.sensitivePaths
+            .filter { !unprotected.contains($0.id) }
+        guard !protected.isEmpty else { return [] }
+
+        let home = NSHomeDirectory()
+        let tools = ["Read", "Edit", "Write", "MultiEdit", "NotebookEdit"]
+        var rules: [String] = []
+        for entry in protected {
+            let expanded = entry.path.hasPrefix("~/")
+                ? home + entry.path.dropFirst(1)
+                : entry.path
+            for tool in tools {
+                rules.append("\(tool)(\(expanded))")
+                rules.append("\(tool)(\(expanded)/**)")
+            }
+        }
+        return rules
+    }
+
     private static func resolveExecutable() -> String? {
         let home = NSHomeDirectory()
         let candidates = [
@@ -136,6 +157,10 @@ class ClaudeCodeBackend: Backend {
                 if !enabledTools.isEmpty {
                     args += ["--allowedTools", enabledTools.joined(separator: ",")]
                 }
+            }
+            // Honor the user's sensitive-path toggles from onboarding — applies in every permission mode.
+            for rule in ClaudeCodeBackend.denyRulesForProtectedPaths() {
+                args += ["--disallowedTools", rule]
             }
             process.arguments = args
 

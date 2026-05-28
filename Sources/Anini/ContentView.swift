@@ -100,7 +100,9 @@ struct ContentView: View {
         }
         .alert("Let Anini see your screen", isPresented: $vm.needsScreenPermission) {
             Button("Open Settings") {
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                    NSWorkspace.shared.open(url)
+                }
             }
             Button("Quit & Relaunch") {
                 let path = Bundle.main.bundleURL.path
