@@ -119,12 +119,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.notchWidget?.positionAndShow()
         }
 
+        // AppKit nudges the borderless notch panel slightly to the right while
+        // an app activation settles, so a single enforce here fires too early
+        // and no-ops. Re-enforce once after the run loop settles to pin it back
+        // to center. One delayed correction (not a polling timer) keeps App Nap
+        // engaged while still fixing the post-activation drift.
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.notchWidget?.enforcePosition()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self?.notchWidget?.enforcePosition()
+            }
         }
     }
 

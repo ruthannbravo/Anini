@@ -176,13 +176,16 @@ class NotchWidget: NSPanel {
         return h > 0 ? ceil(h) : 37
     }
 
+    private var primaryScreen: NSScreen? {
+        NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.main
+    }
+
     func enforcePosition() {
         enforceCurrentPosition()
     }
 
     private func enforceCurrentPosition() {
-        let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.main
-        guard let screen else { return }
+        guard let screen = primaryScreen else { return }
         let expandedH = notchState.activeTab == .todo ? expandedHTodo : expandedHChat
         let w = notchState.isExpanded ? expandedWidth : collapsedW
         let h = notchState.isExpanded ? expandedH : collapsedH
@@ -190,7 +193,7 @@ class NotchWidget: NSPanel {
         let y = screen.frame.maxY - h
         let correct = NSRect(x: x, y: y, width: w, height: h)
         guard frame != correct else { return }
-        setFrame(correct, display: false)
+        setFrame(correct, display: true)
     }
 
     func positionAndShow() {
@@ -234,6 +237,26 @@ class NotchWidget: NSPanel {
         } else {
             resignKey()
         }
+    }
+
+    // AppKit repositions borderless panels during app activation (and Stage
+    // Manager shuffles), which is what shifted the notch to the right. Re-center
+    // X synchronously on any externally driven move so the drift never paints.
+    // Skipped mid-animation, where X legitimately changes as the width animates.
+    override func setFrameOrigin(_ point: NSPoint) {
+        guard !isAnimating, let screen = primaryScreen else {
+            super.setFrameOrigin(point)
+            return
+        }
+        super.setFrameOrigin(NSPoint(x: screen.frame.midX - frame.width / 2, y: point.y))
+    }
+
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        var rect = super.constrainFrameRect(frameRect, to: screen)
+        if !isAnimating, let primary = primaryScreen {
+            rect.origin.x = primary.frame.midX - rect.size.width / 2
+        }
+        return rect
     }
 
     override var canBecomeKey: Bool { true }
