@@ -34,10 +34,12 @@ class BackendManager: ObservableObject {
         sessionActive = false
     }
 
-    var availableBackends: [(WorkspaceConfig.BackendKind, Bool)] {
+    /// Per-backend resolution (availability + reason when unavailable). Settings
+    /// renders the reason so the user knows *why* a backend can't be used.
+    var availableBackends: [(WorkspaceConfig.BackendKind, ExecutableResolution)] {
         [
-            (.claudeCode, claudeCodeBackend.isAvailable),
-            (.codex, codexBackend.isAvailable),
+            (.claudeCode, ClaudeCodeBackend.availability()),
+            (.codex, CodexBackend.availability()),
         ]
     }
 }

@@ -26,18 +26,33 @@ enum Path {
 }
 
 /// Verifies that a candidate executable is safe to launch with the user's
-/// privileges and API key in its environment. A binary is trusted only if it
-/// exists, is executable, is a regular file (not a symlink), is owned by root or
-/// the current user, and is not writable by group or other — so a less-trusted
-/// process cannot plant or replace it. Used instead of PATH/`which` resolution,
-/// which would honor an attacker-influenced PATH.
+/// privileges and API key in its environment. A binary is trusted only if its
+/// real (symlink-resolved) target exists, is executable, is a regular file, is
+/// owned by root or the current user, and is not writable by group or other —
+/// so a less-trusted process cannot plant or replace it. Used instead of
+/// PATH/`which` resolution, which would honor an attacker-influenced PATH.
 enum ExecutableTrust {
+    /// Canonicalize a path, following symlinks, to its real on-disk location.
+    /// Returns nil for a missing path or a broken link. We vet the *resolved*
+    /// target rather than blanket-rejecting symlinks: the official `claude`
+    /// installer ships `~/.local/bin/claude` as a symlink into
+    /// `~/.local/share/claude/versions/<v>`, so rejecting all symlinks would
+    /// make every official install untrusted. The trust guarantee is unchanged
+    /// — it's the file that actually executes that must be a root/user-owned,
+    /// non-group/other-writable regular file.
+    static func realPath(_ path: String) -> String? {
+        guard let c = realpath(path, nil) else { return nil }
+        defer { free(c) }
+        return String(cString: c)
+    }
+
     static func isTrustedExecutable(_ path: String) -> Bool {
         let fm = FileManager.default
-        guard fm.isExecutableFile(atPath: path) else { return false }
-        // Reject symlinks: the target must be vetted on its own merits, and a
-        // symlink in a trusted dir could point at an attacker-controlled file.
-        guard let attrs = try? fm.attributesOfItem(atPath: path),
+        guard let real = realPath(path) else { return false }
+        guard fm.isExecutableFile(atPath: real) else { return false }
+        // After resolution the target is symlink-free, so `.typeRegular` rejects
+        // directories/devices/etc. without rejecting a symlinked launcher.
+        guard let attrs = try? fm.attributesOfItem(atPath: real),
               (attrs[.type] as? FileAttributeType) == .typeRegular else { return false }
 
         // Owner must be root (0) or the current user.
@@ -49,6 +64,42 @@ enum ExecutableTrust {
               (perms & 0o022) == 0 else { return false }
 
         return true
+    }
+
+    /// Resolve `name` from `candidates`, returning a diagnostic when it can't be
+    /// used. The reasons are ordered most-specific-first so Settings can tell the
+    /// user exactly what to do: a trusted hit wins; otherwise we distinguish
+    /// "exists but failed the safety check", "exists only in an ignored location
+    /// (PATH/npm-global)", and "not found anywhere".
+    static func resolve(name: String, candidates: [String], ignoredHints: [String]) -> ExecutableResolution {
+        for path in candidates where isTrustedExecutable(path) {
+            return .found(path: path)
+        }
+        let fm = FileManager.default
+        for path in candidates where fm.fileExists(atPath: path) {
+            return .unavailable(reason:
+                "Found \(name) at \(abbreviate(path)), but it failed Anini's safety check — the "
+                + "real file must be owned by you or root and not writable by group or others. "
+                + "Anini won't launch it with your API key in its environment.")
+        }
+        let hits = ignoredHints.filter { fm.fileExists(atPath: $0) }
+        if !hits.isEmpty {
+            return .unavailable(reason:
+                "\(name) is installed at \(hits.map(abbreviate).joined(separator: ", ")), but Anini "
+                + "ignores PATH and npm-global locations for security — a package install or auto-update "
+                + "could plant a binary there that would run with your API key. Install \(name) into one "
+                + "of: \(candidates.map(abbreviate).joined(separator: ", ")).")
+        }
+        return .unavailable(reason:
+            "No \(name) binary found in any location Anini trusts: "
+            + "\(candidates.map(abbreviate).joined(separator: ", ")).")
+    }
+
+    /// Render `~` for the home prefix so diagnostics read cleanly in the UI.
+    static func abbreviate(_ path: String) -> String {
+        let home = Path.expand("~")
+        if path == home { return "~" }
+        return path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
     }
 }
 

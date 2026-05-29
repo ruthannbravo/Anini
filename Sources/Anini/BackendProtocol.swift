@@ -14,6 +14,19 @@ enum BackendError: LocalizedError {
     }
 }
 
+/// Outcome of resolving a backend's CLI executable. Carries a human-readable
+/// reason when unavailable so Settings can explain *why* — e.g. "installed in
+/// npm-global, which Anini ignores for security" — instead of a bare
+/// "Not installed" that leaves the user stuck.
+enum ExecutableResolution {
+    case found(path: String)        // absolute path, safe to launch
+    case unavailable(reason: String)
+
+    var isAvailable: Bool { if case .found = self { return true } else { return false } }
+    var path: String? { if case .found(let p) = self { return p } else { return nil } }
+    var reason: String? { if case .unavailable(let r) = self { return r } else { return nil } }
+}
+
 protocol Backend: AnyObject {
     var displayName: String { get }
     var sessionId: String? { get }

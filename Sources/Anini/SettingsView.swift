@@ -133,17 +133,30 @@ struct SettingsView: View {
                 BackendManager.shared.switchBackend(to: kind)
             }
 
-            ForEach(BackendManager.shared.availableBackends, id: \.0) { kind, available in
+            ForEach(BackendManager.shared.availableBackends, id: \.0) { kind, resolution in
                 if kind == config.activeBackend {
-                    HStack(spacing: 6) {
+                    HStack(alignment: .top, spacing: 6) {
                         Circle()
-                            .fill(available ? Color.green : Color.orange)
+                            .fill(resolution.isAvailable ? Color.green : Color.orange)
                             .frame(width: 6, height: 6)
-                        Text(available ? "Found in PATH" : "Not installed")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .padding(.top, 4)
+                        if resolution.isAvailable, let path = resolution.path {
+                            Text("Found at \(ExecutableTrust.abbreviate(path))")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Not available")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                    if !available {
+                    if !resolution.isAvailable {
+                        if let reason = resolution.reason {
+                            Text(reason)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         installStepsView(for: kind)
                     }
                 }
@@ -642,12 +655,8 @@ struct SettingsView: View {
             Text("How to set up \(kind.displayName):")
                 .font(.system(size: 12, weight: .medium))
 
-            Text("1. Make sure Node.js is installed — nodejs.org")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-
             HStack(spacing: 6) {
-                Text("2. Open Terminal and run:")
+                Text("1. Open Terminal and run:")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 Text(installCommand(kind))
@@ -666,28 +675,41 @@ struct SettingsView: View {
                 .help("Copy command")
             }
 
+            // Anini resolves CLIs only from trusted absolute locations, never
+            // from npm-global or the shell PATH — so `npm install -g` would
+            // install a working CLI that Anini still won't run. Point users at
+            // an installer that lands in a trusted path instead.
+            Text("Anini only runs CLIs from trusted locations — not npm-global or your shell PATH — so this installer is the reliable way to be detected.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             Group {
                 switch kind {
                 case .claudeCode:
-                    Text("3. Sign in — either run `claude` in Terminal and use your Claude subscription, **or** paste an API key from console.anthropic.com into the field above.")
+                    Text("2. Sign in — either run `claude` in Terminal and use your Claude subscription, **or** paste an API key from console.anthropic.com into the field above.")
                 case .codex:
-                    Text("3. Sign in — either run `codex login` and use your ChatGPT subscription, **or** paste an API key from platform.openai.com into the field above.")
+                    Text("2. Sign in — either run `codex login` and use your ChatGPT subscription, **or** paste an API key from platform.openai.com into the field above.")
                 }
             }
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
 
-            Text("4. Quit and relaunch Anini — the status will turn green")
+            Text("3. Quit and relaunch Anini — the status will turn green")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
     }
 
+    // Installers that land in a location Anini trusts. The Claude native
+    // installer drops the binary in ~/.local/bin; Homebrew installs codex into
+    // /opt/homebrew/bin. Both are checked by `trustedCandidates`, unlike the
+    // npm-global path the CLIs' own docs default to.
     private func installCommand(_ kind: WorkspaceConfig.BackendKind) -> String {
         switch kind {
-        case .claudeCode: return "npm install -g @anthropic-ai/claude-code"
-        case .codex:      return "npm install -g @openai/codex"
+        case .claudeCode: return "curl -fsSL https://claude.ai/install.sh | bash"
+        case .codex:      return "brew install codex"
         }
     }
 }

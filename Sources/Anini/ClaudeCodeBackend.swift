@@ -8,28 +8,42 @@ class ClaudeCodeBackend: Backend {
     var isAvailable: Bool { ClaudeCodeBackend.checkAvailable() }
 
     static func checkAvailable() -> Bool {
-        resolveExecutable() != nil
+        availability().isAvailable
+    }
+
+    /// Full diagnostic resolution — Settings uses the `.unavailable` reason to
+    /// explain *why* the backend can't be used instead of a bare "Not installed".
+    static func availability() -> ExecutableResolution {
+        ExecutableTrust.resolve(name: "claude",
+                                candidates: trustedCandidates,
+                                ignoredHints: ignoredLocations)
     }
 
     private static func resolveExecutable() -> String? {
+        availability().path
+    }
+
+    // Resolve only from trusted absolute locations. We deliberately do NOT fall
+    // back to `which`/PATH (an attacker-influenced PATH could point at a planted
+    // binary that would run with the user's privileges and the ANTHROPIC_API_KEY
+    // in its env), and we drop the npm-writable ~/.npm-global candidate. Each
+    // candidate's real (symlink-resolved) target is verified to be owned by root
+    // or the user and not group/other-writable.
+    private static var trustedCandidates: [String] {
         let home = NSHomeDirectory()
-        // Resolve only from trusted absolute locations. We deliberately do NOT
-        // fall back to `which`/PATH (an attacker-influenced PATH could point at
-        // a planted binary that would run with the user's privileges and the
-        // ANTHROPIC_API_KEY in its env), and we drop the npm-writable
-        // ~/node_modules/.bin / ~/.npm-global candidates. Each candidate is
-        // verified to be a non-symlink owned by root or the user and not
-        // group/other-writable.
-        let candidates = [
+        return [
             "\(home)/.claude/local/claude",
             "/opt/homebrew/bin/claude",
             "/usr/local/bin/claude",
             "\(home)/.local/bin/claude",
         ]
-        for path in candidates where ExecutableTrust.isTrustedExecutable(path) {
-            return path
-        }
-        return nil
+    }
+
+    /// Where `claude` commonly lives but Anini refuses to run it from. Surfaced
+    /// in the unavailable diagnostic so a working CLI that's only in npm-global
+    /// produces a clear explanation rather than a silent "not installed".
+    private static var ignoredLocations: [String] {
+        ["\(NSHomeDirectory())/.npm-global/bin/claude"]
     }
 
     func send(_ text: String, imagePath: String? = nil, onProgress: @escaping @Sendable (String) -> Void) async throws -> String {

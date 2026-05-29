@@ -8,26 +8,41 @@ class CodexBackend: Backend {
     var isAvailable: Bool { CodexBackend.checkAvailable() }
 
     static func checkAvailable() -> Bool {
-        resolveExecutable() != nil
+        availability().isAvailable
+    }
+
+    /// Full diagnostic resolution — Settings uses the `.unavailable` reason to
+    /// explain *why* the backend can't be used instead of a bare "Not installed".
+    static func availability() -> ExecutableResolution {
+        ExecutableTrust.resolve(name: "codex",
+                                candidates: trustedCandidates,
+                                ignoredHints: ignoredLocations)
     }
 
     private static func resolveExecutable() -> String? {
+        availability().path
+    }
+
+    // Resolve only from trusted absolute locations. We deliberately do NOT fall
+    // back to `which`/PATH (an attacker-influenced PATH could point at a planted
+    // binary that would run with the user's privileges and the OPENAI_API_KEY in
+    // its env), and we drop the npm-writable ~/.npm-global candidate. Each
+    // candidate's real (symlink-resolved) target is verified to be owned by root
+    // or the user and not group/other-writable.
+    private static var trustedCandidates: [String] {
         let home = NSHomeDirectory()
-        // Resolve only from trusted absolute locations. We deliberately do NOT
-        // fall back to `which`/PATH (an attacker-influenced PATH could point at
-        // a planted binary that would run with the user's privileges and the
-        // OPENAI_API_KEY in its env), and we drop the npm-writable
-        // ~/.npm-global candidate. Each candidate is verified to be a non-symlink
-        // owned by root or the user and not group/other-writable.
-        let candidates = [
+        return [
             "/opt/homebrew/bin/codex",
             "/usr/local/bin/codex",
             "\(home)/.local/bin/codex",
         ]
-        for path in candidates where ExecutableTrust.isTrustedExecutable(path) {
-            return path
-        }
-        return nil
+    }
+
+    /// Where `codex` commonly lives but Anini refuses to run it from. Surfaced
+    /// in the unavailable diagnostic so a working CLI that's only in npm-global
+    /// produces a clear explanation rather than a silent "not installed".
+    private static var ignoredLocations: [String] {
+        ["\(NSHomeDirectory())/.npm-global/bin/codex"]
     }
 
     func send(_ text: String, imagePath: String? = nil, onProgress: @escaping @Sendable (String) -> Void) async throws -> String {

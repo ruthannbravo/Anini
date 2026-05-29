@@ -33,7 +33,11 @@ final class HardeningTests: XCTestCase {
         XCTAssertFalse(ExecutableTrust.isTrustedExecutable(tmp))
     }
 
-    func testTrustedExecutableRejectsSymlink() {
+    func testTrustedExecutableAcceptsSymlinkToTrustedTarget() {
+        // The official `claude` installer ships ~/.local/bin/claude as a symlink
+        // into ~/.local/share/claude/versions/<v>. A symlink whose real target
+        // is a user-owned, non-group/other-writable regular file is trusted —
+        // we vet the resolved target, not the link.
         let target = NSTemporaryDirectory() + "anini-trust-target-\(UUID().uuidString)"
         let link = NSTemporaryDirectory() + "anini-trust-link-\(UUID().uuidString)"
         FileManager.default.createFile(atPath: target, contents: Data("#!/bin/sh\n".utf8),
@@ -43,6 +47,30 @@ final class HardeningTests: XCTestCase {
             try? FileManager.default.removeItem(atPath: link)
             try? FileManager.default.removeItem(atPath: target)
         }
+        XCTAssertTrue(ExecutableTrust.isTrustedExecutable(link))
+    }
+
+    func testTrustedExecutableRejectsSymlinkToWritableTarget() {
+        // Following the symlink must not launder an untrusted target: a link to
+        // a world-writable file is still rejected because the resolved target
+        // fails the permission check.
+        let target = NSTemporaryDirectory() + "anini-trust-target-\(UUID().uuidString).sh"
+        let link = NSTemporaryDirectory() + "anini-trust-link-\(UUID().uuidString)"
+        FileManager.default.createFile(atPath: target, contents: Data("#!/bin/sh\n".utf8),
+                                       attributes: [.posixPermissions: 0o777])
+        try? FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: target)
+        defer {
+            try? FileManager.default.removeItem(atPath: link)
+            try? FileManager.default.removeItem(atPath: target)
+        }
+        XCTAssertFalse(ExecutableTrust.isTrustedExecutable(link))
+    }
+
+    func testTrustedExecutableRejectsBrokenSymlink() {
+        let link = NSTemporaryDirectory() + "anini-trust-link-\(UUID().uuidString)"
+        try? FileManager.default.createSymbolicLink(
+            atPath: link, withDestinationPath: NSTemporaryDirectory() + "anini-missing-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(atPath: link) }
         XCTAssertFalse(ExecutableTrust.isTrustedExecutable(link))
     }
 
