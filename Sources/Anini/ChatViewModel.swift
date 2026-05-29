@@ -31,8 +31,13 @@ class ChatViewModel: ObservableObject {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
         p.arguments = ["-i"]
-        try? p.run()
-        caffeinateProcess = p
+        do {
+            try p.run()
+            caffeinateProcess = p
+        } catch {
+            // Non-fatal: keep-awake just won't be active for this task.
+            NSLog("Anini: caffeinate failed to launch: \(error.localizedDescription)")
+        }
     }
 
     private func stopCaffeinate() {
@@ -76,6 +81,10 @@ class ChatViewModel: ObservableObject {
             BackendManager.shared.sessionActive = true
         } catch {
             finalize(idx: idx, content: "⚠️ \(error.localizedDescription)")
+        }
+        // The turn is done; delete the screenshot — it may contain secrets.
+        if let shot = screenshotPath {
+            try? FileManager.default.removeItem(atPath: shot)
         }
         isLoading = false
         stopCaffeinate()
@@ -133,7 +142,7 @@ class ChatViewModel: ObservableObject {
     }
 
     func captureScreen() {
-        Task {
+        Task { @MainActor in
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
                 guard let display = content.displays.first else {
@@ -156,12 +165,42 @@ class ChatViewModel: ObservableObject {
     }
 
     private func saveAndSet(cgImage: CGImage) {
-        let path = NSTemporaryDirectory() + "anini_screen_\(Int(Date().timeIntervalSince1970)).png"
-        let cfURL = URL(fileURLWithPath: path) as CFURL
-        guard let dest = CGImageDestinationCreateWithURL(cfURL, "public.png" as CFString, 1, nil) else { return }
+        // Screenshots can contain passwords, private messages, etc. Write them
+        // to an owner-only (0700) app-private dir with an unpredictable name
+        // rather than the world-readable shared temp dir, and 0600 the file.
+        let url = ChatViewModel.screenshotsDir().appendingPathComponent("\(UUID().uuidString).png")
+        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else { return }
         CGImageDestinationAddImage(dest, cgImage, nil)
         guard CGImageDestinationFinalize(dest) else { return }
-        pendingScreenshot = path
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        pendingScreenshot = url.path
+    }
+
+    /// 0700 app-private directory for screenshots.
+    nonisolated static func screenshotsDir() -> URL {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("anini_screens", isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        return dir
+    }
+
+    /// Delete screenshots older than one hour. Called once at launch alongside
+    /// the temp-file orphan sweep.
+    nonisolated static func cleanupScreenshots(minAgeSeconds: TimeInterval = 3600) {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(
+            at: screenshotsDir(),
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        let cutoff = Date().addingTimeInterval(-minAgeSeconds)
+        for url in items {
+            let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? Date.distantPast
+            if mtime < cutoff { try? fm.removeItem(at: url) }
+        }
     }
 
     // MARK: - Private

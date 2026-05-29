@@ -24,7 +24,6 @@ targets:
         LSUIElement: true
         NSAppleEventsUsageDescription: Anini needs AppleScript access to control apps on your behalf.
         NSAppleScriptEnabled: true
-        NSSystemAdministrationUsageDescription: Anini needs admin access to run system commands on your behalf.
         NSCalendarsFullAccessUsageDescription: Anini needs access to your Calendar to create and read events on your behalf.
         NSCalendarsUsageDescription: Anini needs access to your Calendar to create and read events on your behalf.
     entitlements:

@@ -157,10 +157,25 @@ class GoogleCalendarManager: NSObject, ObservableObject {
             .joined(separator: "&")
             .data(using: .utf8)
 
-        guard let (data, _) = try? await URLSession.shared.data(for: request),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else {
-            errorMessage = "Token exchange failed."
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            errorMessage = "Token exchange network error: \(error.localizedDescription)"
+            return
+        }
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            // Still parse the body below — Google returns a JSON error object on
+            // 4xx that the error/error_description handling can surface — but if
+            // the body isn't usable JSON, report the status code.
+            if (try? JSONSerialization.jsonObject(with: data)) == nil {
+                errorMessage = "Token exchange failed (HTTP \(http.statusCode))."
+                return
+            }
+        }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            errorMessage = "Token exchange failed: unexpected response."
             return
         }
 

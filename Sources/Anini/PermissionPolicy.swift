@@ -25,6 +25,97 @@ enum Path {
     }
 }
 
+/// Verifies that a candidate executable is safe to launch with the user's
+/// privileges and API key in its environment. A binary is trusted only if it
+/// exists, is executable, is a regular file (not a symlink), is owned by root or
+/// the current user, and is not writable by group or other — so a less-trusted
+/// process cannot plant or replace it. Used instead of PATH/`which` resolution,
+/// which would honor an attacker-influenced PATH.
+enum ExecutableTrust {
+    static func isTrustedExecutable(_ path: String) -> Bool {
+        let fm = FileManager.default
+        guard fm.isExecutableFile(atPath: path) else { return false }
+        // Reject symlinks: the target must be vetted on its own merits, and a
+        // symlink in a trusted dir could point at an attacker-controlled file.
+        guard let attrs = try? fm.attributesOfItem(atPath: path),
+              (attrs[.type] as? FileAttributeType) == .typeRegular else { return false }
+
+        // Owner must be root (0) or the current user.
+        guard let ownerID = (attrs[.ownerAccountID] as? NSNumber)?.uintValue,
+              ownerID == 0 || ownerID == UInt(getuid()) else { return false }
+
+        // Must not be group- or other-writable.
+        guard let perms = (attrs[.posixPermissions] as? NSNumber)?.uint16Value,
+              (perms & 0o022) == 0 else { return false }
+
+        return true
+    }
+}
+
+/// Subprocess interrupt helper. The directly-owned process is normally
+/// `/usr/bin/sandbox-exec`; the real CLI (and any Bash subprocesses it spawns)
+/// are its descendants. SIGINT to sandbox-exec is forwarded to that child by
+/// the kernel, but a wedged child could ignore it — so we escalate to SIGTERM
+/// after a short grace period rather than leaving it running with the API key
+/// in its environment.
+enum ProcessGroup {
+    /// No-op placeholder kept for call-site symmetry: on macOS we do not move
+    /// the child into a separate process group (there is no stock `setsid`, and
+    /// signaling a misattributed group risks the host app). Interrupt handles
+    /// containment via SIGINT-then-SIGTERM escalation on the owned process.
+    static func makeLeader(_ process: Process) {}
+
+    /// Interrupt (SIGINT) the owned process, then escalate to terminate
+    /// (SIGTERM) after a grace period if it is still running.
+    static func interrupt(_ process: Process) {
+        guard process.isRunning else { return }
+        process.interrupt()
+        let pid = process.processIdentifier
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+            // Re-check the same process is still alive before escalating.
+            if process.isRunning && process.processIdentifier == pid {
+                process.terminate()
+            }
+        }
+    }
+}
+
+/// Thread-safe ownership of the single in-flight subprocess a backend may be
+/// running. Both backends launch at most one CLI process at a time and must be
+/// able to interrupt it from another thread (the stop button) without racing a
+/// concurrent launch. The lock guards every read/write of the owned process so
+/// `interrupt()` can never observe a half-assigned value or signal a process
+/// that has already been replaced.
+final class ProcessOwner {
+    private let lock = NSLock()
+    private var current: Process?
+
+    /// Atomically install `next` as the owned process and return the prior one
+    /// (so the caller can interrupt it instead of orphaning it).
+    func swap(_ next: Process?) -> Process? {
+        lock.lock()
+        defer { lock.unlock() }
+        let prior = current
+        current = next
+        return prior
+    }
+
+    /// Clear ownership, but only if `proc` is still the owned process — avoids
+    /// a late termination handler clobbering a process that already replaced it.
+    func clear(if proc: Process) {
+        lock.lock()
+        defer { lock.unlock() }
+        if current === proc { current = nil }
+    }
+
+    /// Snapshot the currently-owned process for signaling.
+    func snapshot() -> Process? {
+        lock.lock()
+        defer { lock.unlock() }
+        return current
+    }
+}
+
 /// Single source of truth for "what the AI is allowed to touch" that both
 /// backends consult. Derived from `WorkspaceConfig` + `SecurityLayer` once per
 /// invocation; both backends build their CLI args + sandbox profile from this
@@ -37,6 +128,11 @@ struct PermissionPolicy {
     /// Absolute, tilde-expanded, deduped list of paths the AI must not touch.
     /// Filtered against the user's `unprotectedPaths` opt-outs.
     let protectedPaths: [String]
+
+    /// Absolute, tilde-expanded workspace directory the subprocess is allowed to
+    /// read and write. The sandbox re-allows this subtree after denying the home
+    /// credential surface.
+    let workspace: String
 
     static func current() -> PermissionPolicy {
         let config = WorkspaceConfig.shared
@@ -54,7 +150,8 @@ struct PermissionPolicy {
 
         return PermissionPolicy(
             allowFullAuto: config.dangerouslySkipPermissions,
-            protectedPaths: deduped
+            protectedPaths: deduped,
+            workspace: Path.expand(config.workspacePath)
         )
     }
 
@@ -137,16 +234,53 @@ struct PermissionPolicy {
 
     // MARK: - macOS Seatbelt sandbox profile
 
-    /// Builds an SBPL profile that denies reads & writes on every protected
-    /// path. Returns nil when nothing is protected so we don't pay for
-    /// sandbox-exec when not needed.
+    /// Builds a default-deny SBPL profile for the credential surface. The whole
+    /// home directory is denied for both read and write, then the workspace and
+    /// the CLIs' own config/state dirs are re-allowed. This protects *every*
+    /// secret under $HOME — not just the hardcoded `protectedPaths` list — so an
+    /// unanticipated credential store (e.g. ~/.kube, ~/.docker, browser cookie
+    /// DBs) is contained by default.
+    ///
+    /// Non-file operations (exec, network, signals) stay allowed so the CLI can
+    /// run and reach its provider. The profile is always produced (never nil),
+    /// so containment never depends on the bypassable string-match deny rules.
+    /// The explicit `protectedPaths` are denied last as defense-in-depth.
     func sandboxProfile() -> String? {
-        guard !protectedPaths.isEmpty else { return nil }
-        var lines = ["(version 1)", "(allow default)"]
-        for expanded in protectedPaths {
-            let escaped = Path.sbplEscaped(expanded)
-            lines.append("(deny file-read* file-write* (subpath \"\(escaped)\"))")
+        let home = Path.expand("~")
+        func deny(_ p: String) -> String {
+            "(deny file-read* file-write* (subpath \"\(Path.sbplEscaped(p))\"))"
         }
+        func allow(_ p: String) -> String {
+            "(allow file-read* file-write* (subpath \"\(Path.sbplEscaped(p))\"))"
+        }
+
+        var lines = ["(version 1)", "(allow default)"]
+
+        let ws = Path.expand(workspace)
+        if !ws.isEmpty && ws != home && !home.hasPrefix(ws + "/") {
+            // Workspace is outside (or a strict subdir of) home: deny the whole
+            // home credential surface, then re-allow only the workspace and the
+            // CLIs' own config/state dirs.
+            lines.append(deny(home))
+            lines.append(allow(ws))
+            for dir in ["\(home)/.claude", "\(home)/.codex", "\(home)/.cache", "\(home)/.config/anini"] {
+                lines.append(allow(dir))
+            }
+        } else {
+            // Workspace is the home directory itself (the default), so we cannot
+            // blanket-deny home without breaking legitimate work. Fall back to
+            // denying the known credential subtrees explicitly.
+            for dir in SecurityLayer.shared.sensitivePaths.map({ Path.expand($0.path) }) {
+                lines.append(deny(dir))
+            }
+        }
+
+        // Explicit protected paths denied last as defense-in-depth — they win
+        // even if a re-allow subtree above ever overlapped them.
+        for expanded in protectedPaths {
+            lines.append(deny(expanded))
+        }
+
         return lines.joined(separator: "\n")
     }
 
