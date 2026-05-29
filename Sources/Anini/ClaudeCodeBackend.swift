@@ -3,28 +3,7 @@ import Foundation
 class ClaudeCodeBackend: Backend {
     let displayName = "Claude Code"
     private(set) var sessionId: String?
-    private let processLock = NSLock()
-    private var currentProcess: Process?
-
-    private func swapCurrent(_ next: Process?) -> Process? {
-        processLock.lock()
-        defer { processLock.unlock() }
-        let prior = currentProcess
-        currentProcess = next
-        return prior
-    }
-
-    private func clearCurrent(if proc: Process) {
-        processLock.lock()
-        defer { processLock.unlock() }
-        if currentProcess === proc { currentProcess = nil }
-    }
-
-    private func snapshotCurrent() -> Process? {
-        processLock.lock()
-        defer { processLock.unlock() }
-        return currentProcess
-    }
+    private let processOwner = ProcessOwner()
 
     var isAvailable: Bool { ClaudeCodeBackend.checkAvailable() }
 
@@ -34,27 +13,23 @@ class ClaudeCodeBackend: Backend {
 
     private static func resolveExecutable() -> String? {
         let home = NSHomeDirectory()
+        // Resolve only from trusted absolute locations. We deliberately do NOT
+        // fall back to `which`/PATH (an attacker-influenced PATH could point at
+        // a planted binary that would run with the user's privileges and the
+        // ANTHROPIC_API_KEY in its env), and we drop the npm-writable
+        // ~/node_modules/.bin / ~/.npm-global candidates. Each candidate is
+        // verified to be a non-symlink owned by root or the user and not
+        // group/other-writable.
         let candidates = [
-            "/usr/local/bin/claude",
+            "\(home)/.claude/local/claude",
             "/opt/homebrew/bin/claude",
-            "\(home)/.npm-global/bin/claude",
+            "/usr/local/bin/claude",
             "\(home)/.local/bin/claude",
-            "\(home)/node_modules/.bin/claude",
         ]
-        for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
+        for path in candidates where ExecutableTrust.isTrustedExecutable(path) {
             return path
         }
-        let which = Process()
-        which.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        which.arguments = ["claude"]
-        let pipe = Pipe()
-        which.standardOutput = pipe
-        which.standardError = Pipe()
-        try? which.run()
-        which.waitUntilExit()
-        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return out.isEmpty ? nil : out
+        return nil
     }
 
     func send(_ text: String, imagePath: String? = nil, onProgress: @escaping @Sendable (String) -> Void) async throws -> String {
@@ -66,7 +41,12 @@ class ClaudeCodeBackend: Backend {
     }
 
     func interrupt() {
-        snapshotCurrent()?.interrupt()
+        guard let proc = processOwner.snapshot() else { return }
+        // The owned process is /usr/bin/sandbox-exec; the real claude (and any
+        // Bash subprocesses it spawned) are in the same process group. Signal
+        // the whole group so the grandchildren aren't orphaned with the API key
+        // still live. Fall back to a plain interrupt if the pid is unavailable.
+        ProcessGroup.interrupt(proc)
     }
 
     func clearSession() {
@@ -146,15 +126,20 @@ class ClaudeCodeBackend: Backend {
             if let sid = sessionId {
                 args += ["--resume", sid]
             }
-            let allCapsEnabled = Capability.all.allSatisfy {
-                WorkspaceConfig.shared.allowedCapabilities.contains($0.id)
-            }
-            if WorkspaceConfig.shared.dangerouslySkipPermissions || allCapsEnabled {
+            // The no-questions-asked bypass must come ONLY from the explicit
+            // toggle. It must never be inferred from "all capabilities enabled" —
+            // capabilities default to all-on, so inferring bypass from them would
+            // silently put a user who chose Safe mode into full-auto. When not
+            // bypassing, narrow Claude to exactly the tools the enabled
+            // capabilities grant (deduped, order preserved).
+            if WorkspaceConfig.shared.dangerouslySkipPermissions {
                 args.append("--dangerously-skip-permissions")
             } else {
+                var seenTools = Set<String>()
                 let enabledTools = Capability.all
                     .filter { WorkspaceConfig.shared.allowedCapabilities.contains($0.id) }
                     .flatMap { $0.claudeTools }
+                    .filter { seenTools.insert($0).inserted }
                 if !enabledTools.isEmpty {
                     args += ["--allowedTools", enabledTools.joined(separator: ",")]
                 }
@@ -215,15 +200,20 @@ class ClaudeCodeBackend: Backend {
                 if let url = settingsURLForCleanup {
                     try? FileManager.default.removeItem(at: url)
                 }
-                self?.clearCurrent(if: proc)
+                self?.processOwner.clear(if: proc)
                 let result = streamState.result
                 if let sid = result.sessionId {
                     DispatchQueue.main.async { self?.sessionId = sid }
                 }
                 SecurityLayer.shared.log("ClaudeCode session=\(result.sessionId ?? "?") exit=\(proc.terminationStatus)")
 
-                if proc.terminationStatus == 0 || !result.text.isEmpty {
+                if proc.terminationStatus == 0 {
                     continuation.resume(returning: result.text)
+                } else if !result.text.isEmpty {
+                    // Partial output but a non-zero exit: surface the failure as
+                    // an appended warning instead of silently reporting success.
+                    continuation.resume(returning: result.text
+                        + "\n\n⚠️ The assistant exited with an error (code \(proc.terminationStatus)); this answer may be incomplete.")
                 } else {
                     let errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
                     let errMsg = String(data: errData, encoding: .utf8)?
@@ -235,12 +225,15 @@ class ClaudeCodeBackend: Backend {
             // Publish ownership before launching so interrupt() can never race
             // a partial assignment, and so any prior in-flight process gets
             // stopped instead of orphaned.
-            let prior = swapCurrent(process)
-            prior?.interrupt()
+            let prior = processOwner.swap(process)
+            if let prior { ProcessGroup.interrupt(prior) }
+            // Put the child in its own process group so interrupt() can signal
+            // the whole tree (sandbox-exec + claude + its Bash subprocesses).
+            ProcessGroup.makeLeader(process)
             do {
                 try process.run()
             } catch {
-                clearCurrent(if: process)
+                processOwner.clear(if: process)
                 continuation.resume(throwing: error)
             }
         }

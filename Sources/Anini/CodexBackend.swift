@@ -3,28 +3,7 @@ import Foundation
 class CodexBackend: Backend {
     let displayName = "Codex"
     private(set) var sessionId: String? = nil
-    private let processLock = NSLock()
-    private var currentProcess: Process?
-
-    private func swapCurrent(_ next: Process?) -> Process? {
-        processLock.lock()
-        defer { processLock.unlock() }
-        let prior = currentProcess
-        currentProcess = next
-        return prior
-    }
-
-    private func clearCurrent(if proc: Process) {
-        processLock.lock()
-        defer { processLock.unlock() }
-        if currentProcess === proc { currentProcess = nil }
-    }
-
-    private func snapshotCurrent() -> Process? {
-        processLock.lock()
-        defer { processLock.unlock() }
-        return currentProcess
-    }
+    private let processOwner = ProcessOwner()
 
     var isAvailable: Bool { CodexBackend.checkAvailable() }
 
@@ -34,26 +13,21 @@ class CodexBackend: Backend {
 
     private static func resolveExecutable() -> String? {
         let home = NSHomeDirectory()
+        // Resolve only from trusted absolute locations. We deliberately do NOT
+        // fall back to `which`/PATH (an attacker-influenced PATH could point at
+        // a planted binary that would run with the user's privileges and the
+        // OPENAI_API_KEY in its env), and we drop the npm-writable
+        // ~/.npm-global candidate. Each candidate is verified to be a non-symlink
+        // owned by root or the user and not group/other-writable.
         let candidates = [
-            "/usr/local/bin/codex",
             "/opt/homebrew/bin/codex",
-            "\(home)/.npm-global/bin/codex",
+            "/usr/local/bin/codex",
             "\(home)/.local/bin/codex",
         ]
-        for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
+        for path in candidates where ExecutableTrust.isTrustedExecutable(path) {
             return path
         }
-        let which = Process()
-        which.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        which.arguments = ["codex"]
-        let pipe = Pipe()
-        which.standardOutput = pipe
-        which.standardError = Pipe()
-        try? which.run()
-        which.waitUntilExit()
-        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return out.isEmpty ? nil : out
+        return nil
     }
 
     func send(_ text: String, imagePath: String? = nil, onProgress: @escaping @Sendable (String) -> Void) async throws -> String {
@@ -129,12 +103,17 @@ class CodexBackend: Backend {
                 if let url = profileURLForCleanup {
                     try? FileManager.default.removeItem(at: url)
                 }
-                self?.clearCurrent(if: proc)
+                self?.processOwner.clear(if: proc)
                 SecurityLayer.shared.log("Codex exit=\(proc.terminationStatus)")
                 let text = output.snapshot().trimmingCharacters(in: .whitespacesAndNewlines)
 
-                if proc.terminationStatus == 0 || !text.isEmpty {
+                if proc.terminationStatus == 0 {
                     continuation.resume(returning: text)
+                } else if !text.isEmpty {
+                    // Partial output but a non-zero exit: surface the failure as
+                    // an appended warning instead of silently reporting success.
+                    continuation.resume(returning: text
+                        + "\n\n⚠️ Codex exited with an error (code \(proc.terminationStatus)); this answer may be incomplete.")
                 } else {
                     let errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
                     let errMsg = String(data: errData, encoding: .utf8)?
@@ -146,12 +125,15 @@ class CodexBackend: Backend {
             // Publish ownership before launching so interrupt() can never race
             // a partial assignment, and so any prior in-flight process gets
             // stopped instead of orphaned.
-            let prior = swapCurrent(process)
-            prior?.interrupt()
+            let prior = processOwner.swap(process)
+            if let prior { ProcessGroup.interrupt(prior) }
+            // Put the child in its own process group so interrupt() can signal
+            // the whole tree (sandbox-exec + codex + its Bash subprocesses).
+            ProcessGroup.makeLeader(process)
             do {
                 try process.run()
             } catch {
-                clearCurrent(if: process)
+                processOwner.clear(if: process)
                 continuation.resume(throwing: error)
             }
         }
@@ -161,7 +143,12 @@ class CodexBackend: Backend {
         "Codex doesn't support /compact. Clear the session to start fresh."
     }
 
-    func interrupt() { snapshotCurrent()?.interrupt() }
+    func interrupt() {
+        guard let proc = processOwner.snapshot() else { return }
+        // Signal the child's whole process group (sandbox-exec + codex + any
+        // Bash subprocesses) so nothing is orphaned with the API key still live.
+        ProcessGroup.interrupt(proc)
+    }
     func clearSession() {}
 }
 

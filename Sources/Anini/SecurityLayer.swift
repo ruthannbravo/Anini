@@ -130,7 +130,12 @@ class SecurityLayer {
     private let auditLogURL: URL = {
         let dir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".anini")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // Owner-only dir (0700): the log records session IDs (usable with
+        // `claude --resume`) and command metadata, so it must not be readable
+        // by other local users/processes.
+        try? FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
         return dir.appendingPathComponent("audit.log")
     }()
 
@@ -144,7 +149,10 @@ class SecurityLayer {
             handle.seekToEndOfFile()
             handle.write(data)
         } else {
-            try? data.write(to: auditLogURL)
+            // Create owner-only (0600) so audit records are not world-readable.
+            FileManager.default.createFile(
+                atPath: auditLogURL.path, contents: data,
+                attributes: [.posixPermissions: 0o600])
         }
     }
 }

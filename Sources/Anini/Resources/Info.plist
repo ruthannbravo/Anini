@@ -32,7 +32,5 @@
 	<string>Anini needs access to your Calendar to create and read events on your behalf.</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Anini needs access to your Calendar to create and read events on your behalf.</string>
-	<key>NSSystemAdministrationUsageDescription</key>
-	<string>Anini needs admin access to run system commands on your behalf.</string>
 </dict>
 </plist>

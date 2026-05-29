@@ -261,8 +261,11 @@ class WorkspaceConfig: ObservableObject {
         let savedCodex = UserDefaults.standard.string(forKey: "codex_model") ?? ""
         codexModel = WorkspaceConfig.codexModels.map(\.id).contains(savedCodex)
             ? savedCodex : WorkspaceConfig.codexModels[0].id
-        let rgb = UserDefaults.standard.array(forKey: "ui_accent_color") as? [Double]
-            ?? [0.72, 0.57, 0.93]
+        let defaultRGB: [Double] = [0.72, 0.57, 0.93]
+        let storedRGB = UserDefaults.standard.array(forKey: "ui_accent_color") as? [Double]
+        // Guard against corrupted/legacy defaults: a malformed array would
+        // otherwise trap on subscript and crash before any UI is shown.
+        let rgb = (storedRGB?.count == 3) ? storedRGB! : defaultRGB
         accentColorRGB = rgb
         accentColor = Color(red: rgb[0], green: rgb[1], blue: rgb[2])
         panelOpacity = UserDefaults.standard.object(forKey: "ui_panel_opacity") as? Double ?? 0.78

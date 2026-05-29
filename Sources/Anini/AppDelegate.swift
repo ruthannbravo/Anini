@@ -29,6 +29,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // (SIGKILL, panic, reboot). Files newer than 1h are left alone in
         // case a sibling Anini process is mid-subprocess.
         PermissionPolicy.cleanupOrphans()
+        // Sweep old screenshots (which may contain secrets) from temp.
+        ChatViewModel.cleanupScreenshots()
         setupMenuBar()
         setupPanel()
         setupNotch()

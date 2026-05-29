@@ -108,8 +108,14 @@ struct ContentView: View {
                 let path = Bundle.main.bundleURL.path
                 let task = Process()
                 task.launchPath = "/bin/sh"
-                task.arguments = ["-c", "sleep 0.75 && open '\(path)'"]
-                try? task.run()
+                // Shell-quote the bundle path so a path containing a single
+                // quote (or other shell metacharacters) can't break the command.
+                task.arguments = ["-c", "sleep 0.75 && open \(Path.shellQuoted(path))"]
+                do {
+                    try task.run()
+                } catch {
+                    NSLog("Anini: relaunch failed: \(error.localizedDescription)")
+                }
                 NSApp.terminate(nil)
             }
             Button("Not now", role: .cancel) { }
