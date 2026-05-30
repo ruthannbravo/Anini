@@ -41,12 +41,19 @@ struct NotchWidgetView: View {
     var body: some View {
         Group {
             if notchState.isExpanded {
+                // Lay the expanded content out at its FINAL size regardless of
+                // the window's current (animating) size, so it never reflows /
+                // squishes mid-open. The growing window reveals it via clipShape.
                 expandedContent
+                    .frame(
+                        width: NotchMetrics.expandedWidth(config),
+                        height: NotchMetrics.expandedHeight(tab: notchState.activeTab)
+                    )
             } else {
                 collapsedContent
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background {
             ZStack {
                 pill.fill(.thinMaterial)
@@ -113,7 +120,7 @@ struct NotchWidgetView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, 12)
+                .padding(.trailing, 16)
 
                 Rectangle()
                     .fill(Color.white.opacity(0.12))
@@ -123,13 +130,13 @@ struct NotchWidgetView: View {
             if hasLeft {
                 rightPanel
                     .frame(width: 222, alignment: .trailing)
-                    .padding(.leading, 12)
+                    .padding(.leading, 16)
             } else {
                 rightPanel
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 40)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
@@ -191,7 +198,6 @@ struct NotchWidgetView: View {
                 todoContent
             }
         }
-        .padding(.leading, 8)
     }
 
     // ── Notch settings popover ────────────────────────────────────────────

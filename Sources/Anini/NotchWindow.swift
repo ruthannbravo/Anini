@@ -4,6 +4,33 @@ import SwiftUI
 
 enum NotchTab { case chat, todo }
 
+// Single source of truth for the notch's dimensions, shared by the window
+// (which animates its frame to these sizes) and the SwiftUI content (which is
+// laid out at the expanded size and revealed by the growing window's clip).
+// Keeping both off one definition is what guarantees the content never reflows
+// mid-animation — that reflow was the "inward pinch" during open.
+enum NotchMetrics {
+    static let collapsedWidth: CGFloat = 110
+    static let fallbackCollapsedHeight: CGFloat = 37
+    static let expandedHeightChat: CGFloat = 120
+    static let expandedHeightTodo: CGFloat = 260
+
+    static func expandedWidth(_ cfg: WorkspaceConfig) -> CGFloat {
+        let hasMusic = cfg.showNowPlaying
+        let hasLang  = cfg.learningLanguage != .none && (cfg.showLangWord || cfg.showLangVerb)
+        switch (hasMusic, hasLang) {
+        case (true,  true):  return 620
+        case (true,  false): return 540
+        case (false, true):  return 420
+        case (false, false): return 320
+        }
+    }
+
+    static func expandedHeight(tab: NotchTab) -> CGFloat {
+        tab == .todo ? expandedHeightTodo : expandedHeightChat
+    }
+}
+
 struct TodoTask: Identifiable, Codable {
     let id: UUID
     var title: String
@@ -51,10 +78,10 @@ class NotchWidget: NSPanel {
     private var cancellables = Set<AnyCancellable>()
     let notchState = NotchState()
 
-    private let collapsedW: CGFloat = 110
-    private var collapsedH: CGFloat = 37
-    private let expandedHChat: CGFloat = 120
-    private let expandedHTodo: CGFloat = 260
+    private let collapsedW: CGFloat = NotchMetrics.collapsedWidth
+    private var collapsedH: CGFloat = NotchMetrics.fallbackCollapsedHeight
+    private let expandedHChat: CGFloat = NotchMetrics.expandedHeightChat
+    private let expandedHTodo: CGFloat = NotchMetrics.expandedHeightTodo
     private var isAnimating = false
 
     init(nowPlaying: NowPlayingService, onOpenChat: @escaping (String, TodoTask?) -> Void, onOpenSettings: @escaping () -> Void) {
@@ -89,6 +116,11 @@ class NotchWidget: NSPanel {
         let hosting = NotchHostingView(rootView: rootView)
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = .clear
+        // Re-render the SwiftUI content (including its rounded clipShape) at
+        // every step of the window's frame animation instead of stretching a
+        // cached snapshot. The snapshot-stretch is what made the .thinMaterial
+        // corners look square / distorted while the notch was opening.
+        hosting.layerContentsRedrawPolicy = .duringViewResize
         self.contentView = hosting
 
         NotificationCenter.default.addObserver(
@@ -160,15 +192,7 @@ class NotchWidget: NSPanel {
     }
 
     private var expandedWidth: CGFloat {
-        let cfg = WorkspaceConfig.shared
-        let hasMusic = cfg.showNowPlaying
-        let hasLang  = cfg.learningLanguage != .none && (cfg.showLangWord || cfg.showLangVerb)
-        switch (hasMusic, hasLang) {
-        case (true,  true):  return 560
-        case (true,  false): return 480
-        case (false, true):  return 360
-        case (false, false): return 260
-        }
+        NotchMetrics.expandedWidth(WorkspaceConfig.shared)
     }
 
     private func notchHeight(for screen: NSScreen) -> CGFloat {
